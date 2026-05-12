@@ -583,8 +583,7 @@ class n1diceBosunViewModel {
         'app_version': '1.4.1',
         'apple_id': '6768618190',
         'fcm_token': token ?? 'no_token',
-        'device_id':
-        n1diceDeviceProfileInstance.n1diceDeviceId ?? 'no_device',
+        'device_id': n1diceDeviceProfileInstance.n1diceDeviceId ?? 'no_device',
         'instance_id':
         n1diceDeviceProfileInstance.n1diceSessionId ?? 'no_instance',
         'platform':
@@ -848,7 +847,7 @@ class _n1diceHarborState extends State<n1diceHarbor>
   Timer? _popupInstallTimer;
 
   final String n1diceHomeUrl =
-      'https://appres.nndice.club';
+      'https://appres.nndice.club/';
 
   int n1diceWebViewKeyCounter = 0;
   DateTime? n1diceSleepAt;
@@ -1069,47 +1068,53 @@ class _n1diceHarborState extends State<n1diceHarbor>
         full.contains('gstatic.com');
   }
 
-  // --- новый метод: выставить userAgent = "random" ---
-  Future<void> _applyRandomUserAgent() async {
+  // --- Логика Google: User-Agent = "random" и обратно ---
+
+  Future<void> _addRandomToUserAgentForGoogle() async {
     if (n1diceWebViewController == null) return;
 
     const String targetUa = 'random';
 
-    if (_currentUserAgent == targetUa) {
-      n1diceLoggerService()
-          .n1diceLogInfo('Random UA unchanged, keeping: $_currentUserAgent');
+    if (_currentUserAgent == targetUa && _isInGoogleAuth) {
+      n1diceLoggerService().n1diceLogInfo(
+        'Already in Google flow with random UA, skip reapply',
+      );
       return;
     }
 
-    n1diceLoggerService()
-        .n1diceLogInfo('Applying RANDOM WebView User-Agent (Google): $targetUa');
+    n1diceLoggerService().n1diceLogInfo(
+      'Switching User-Agent to RANDOM for Google URL: $targetUa',
+    );
 
     try {
       await n1diceWebViewController!.setSettings(
         settings: InAppWebViewSettings(userAgent: targetUa),
       );
       _currentUserAgent = targetUa;
-      print('[UA] RANDOM WEBVIEW USER AGENT (Google): $_currentUserAgent');
+      _isInGoogleAuth = true;
+      print('[UA] GOOGLE RANDOM USER AGENT: $_currentUserAgent');
     } catch (e) {
       n1diceLoggerService().n1diceLogError(
-          'Error while setting random User-Agent "$targetUa": $e');
+        'Error while setting RANDOM User-Agent for Google URL: $e',
+      );
     }
   }
 
-  Future<void> _openGoogleExternal(Uri uri) async {
-    n1diceLoggerService().n1diceLogInfo('Open Google externally: $uri');
+  Future<void> _restoreUserAgentAfterGoogle() async {
+    if (!_isInGoogleAuth) {
+      return;
+    }
+    n1diceLoggerService()
+        .n1diceLogInfo('Leaving Google flow, restoring normal User-Agent');
+    _isInGoogleAuth = false;
+    await _applyNormalUserAgentIfNeeded();
+  }
 
-    // Перед открытием Google — включаем random UA
-    await _applyRandomUserAgent();
-
-    try {
-      await launchUrl(
-        uri,
-        mode: LaunchMode.externalApplication,
-      );
-    } catch (e, st) {
-      n1diceLoggerService()
-          .n1diceLogError('Open Google externally failed: $e\n$st');
+  Future<void> _updateUserAgentForUrl(Uri uri) async {
+    if (_isGoogleUrl(uri)) {
+      await _addRandomToUserAgentForGoogle();
+    } else {
+      await _restoreUserAgentAfterGoogle();
     }
   }
 
@@ -2648,10 +2653,8 @@ class _n1diceHarborState extends State<n1diceHarbor>
       _currentUrl = n1diceUri.toString();
       await _updateBackButtonVisibility();
 
-      if (_isGoogleUrl(n1diceUri)) {
-        await _openGoogleExternal(n1diceUri);
-        return false;
-      }
+      // Google – остаёмся в WebView, просто включаем random UA
+      await _updateUserAgentForUrl(n1diceUri);
 
       if (n1diceIsBankScheme(n1diceUri) ||
           ((n1diceUri.scheme == 'http' || n1diceUri.scheme == 'https') &&
@@ -2728,10 +2731,8 @@ class _n1diceHarborState extends State<n1diceHarbor>
     if (!mounted) return false;
 
     if (uri != null) {
-      if (_isGoogleUrl(uri)) {
-        await _openGoogleExternal(uri);
-        return false;
-      }
+      // Google в попапе — тоже внутри, просто UA
+      await _updateUserAgentForUrl(uri);
     }
 
     if (createWindowAction.windowId != null) {
@@ -2990,13 +2991,8 @@ class _n1diceHarborState extends State<n1diceHarbor>
                 onLoadStart: (controller, uri) async {
                   print('WERLOG: popup onLoadStart url=$uri');
                   if (uri != null && !_isAboutBlankUri(uri)) {
-                    if (_isGoogleUrl(uri)) {
-                      await _openGoogleExternal(uri);
-                      try {
-                        await controller.stopLoading();
-                      } catch (_) {}
-                      return;
-                    }
+                    // Google / не-Google — обновляем UA, остаёмся в WebView
+                    await _updateUserAgentForUrl(uri);
 
                     if (mounted) {
                       setState(() {
@@ -3050,10 +3046,8 @@ class _n1diceHarborState extends State<n1diceHarbor>
                     return NavigationActionPolicy.ALLOW;
                   }
 
-                  if (_isGoogleUrl(uri)) {
-                    await _openGoogleExternal(uri);
-                    return NavigationActionPolicy.CANCEL;
-                  }
+                  // Google — меняем UA и даём грузиться внутри
+                  await _updateUserAgentForUrl(uri);
 
                   final String scheme =
                   uri.scheme.toLowerCase();
@@ -3505,16 +3499,9 @@ class _n1diceHarborState extends State<n1diceHarbor>
                     if (n1diceViewUri != null) {
                       _currentUrl = n1diceViewUri.toString();
 
-                      if (_isGoogleUrl(n1diceViewUri)) {
-                        try {
-                          await controller.stopLoading();
-                        } catch (_) {}
-                        await _openGoogleExternal(
-                            n1diceViewUri);
-                        return;
-                      } else {
-                        await _applyNormalUserAgentIfNeeded();
-                      }
+                      // Google / не-Google — только меняем UA, всё остаётся в WebView
+                      await _updateUserAgentForUrl(
+                          n1diceViewUri);
 
                       await _updateBackButtonVisibility();
 
@@ -3613,9 +3600,8 @@ class _n1diceHarborState extends State<n1diceHarbor>
                     n1diceCurrentUrl = uri.toString();
                     _currentUrl = n1diceCurrentUrl;
 
-                    if (uri != null &&
-                        !_isGoogleUrl(uri)) {
-                      await _applyNormalUserAgentIfNeeded();
+                    if (uri != null) {
+                      await _updateUserAgentForUrl(uri);
                     }
 
                     if (!_isAboutBlankUri(uri)) {
@@ -3665,13 +3651,9 @@ class _n1diceHarborState extends State<n1diceHarbor>
                       return NavigationActionPolicy.ALLOW;
                     }
 
-                    if (_isGoogleUrl(n1diceUri)) {
-                      await _openGoogleExternal(
-                          n1diceUri);
-                      return NavigationActionPolicy.CANCEL;
-                    } else {
-                      await _applyNormalUserAgentIfNeeded();
-                    }
+                    // Google / не-Google — всё в WebView, переключаем UA
+                    await _updateUserAgentForUrl(
+                        n1diceUri);
 
                     if (n1diceIsBareEmail(n1diceUri)) {
                       final Uri n1diceMailto =
