@@ -30,7 +30,7 @@ import 'package:timezone/timezone.dart' as tz_zone;
 // ============================================================================
 
 const String n1diceLoadedOnceKey = 'loaded_once';
-const String n1diceStatEndpoint = 'https://data.ncup.team/stat';
+const String n1diceStatEndpoint = 'https://appres.nndice.club/stat';
 const String n1diceCachedFcmKey = 'cached_fcm';
 const String n1diceCachedDeepKey = 'cached_deep_push_uri';
 
@@ -848,7 +848,7 @@ class _n1diceHarborState extends State<n1diceHarbor>
   Timer? _popupInstallTimer;
 
   final String n1diceHomeUrl =
-      'https://n1cdatadev-nrfru.ondigitalocean.app/';
+      'https://appres.nndice.club';
 
   int n1diceWebViewKeyCounter = 0;
   DateTime? n1diceSleepAt;
