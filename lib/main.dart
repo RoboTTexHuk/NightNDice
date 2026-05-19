@@ -25,6 +25,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz_zone;
 
+import 'gameVIEW.dart';
+
 // ============================================================================
 // Константы
 // ============================================================================
@@ -1863,6 +1865,19 @@ class _n1diceHarborState extends State<n1diceHarbor>
 
   void n1diceHandleServerSavedata(String savedata) {
     print('onServerResponse savedata: $savedata');
+    if(savedata=='false'){
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute<Widget>(
+          builder: (BuildContext context) =>
+          SimpleFullInAppWebViewPage(),
+        ),
+            (Route<dynamic> route) => false,
+      );
+    }
+
+
+
   }
 
   Color _parseHexColor(String hex) {
