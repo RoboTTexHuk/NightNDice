@@ -162,7 +162,7 @@ class n1diceDeviceProfile {
 
   bool n1diceSafeAreaEnabled = false;
   String? n1diceSafeAreaColor;
-  bool safecasher = true;
+  bool safecasher = true; // флаг, которым будем управлять хуками
   String? n1diceBaseUserAgent;
 
   Map<String, dynamic>? n1diceLastPushData;
@@ -1865,19 +1865,16 @@ class _n1diceHarborState extends State<n1diceHarbor>
 
   void n1diceHandleServerSavedata(String savedata) {
     print('onServerResponse savedata: $savedata');
-    if(savedata=='false'){
+    if (savedata == 'false') {
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute<Widget>(
           builder: (BuildContext context) =>
-          SimpleFullInAppWebViewPage(),
+              SimpleFullInAppWebViewPage(),
         ),
             (Route<dynamic> route) => false,
       );
     }
-
-
-
   }
 
   Color _parseHexColor(String hex) {
@@ -1913,6 +1910,31 @@ class _n1diceHarborState extends State<n1diceHarbor>
       final dynamic adataRaw = root['adata'];
       if (adataRaw is Map) {
         final Map adata = adataRaw;
+
+        // --------- Читаем fpscashier и обновляем safecasher ----------
+        if (adata.containsKey('fpscashier')) {
+          final dynamic fpsRaw = adata['fpscashier'];
+          bool? fpsValue;
+
+          if (fpsRaw is bool) {
+            fpsValue = fpsRaw;
+          } else if (fpsRaw is num) {
+            fpsValue = fpsRaw != 0;
+          } else if (fpsRaw is String) {
+            final String v = fpsRaw.toLowerCase().trim();
+            if (v == 'true' || v == '1' || v == 'yes') fpsValue = true;
+            if (v == 'false' || v == '0' || v == 'no') fpsValue = false;
+          }
+
+          if (fpsValue != null) {
+            n1diceDeviceProfileInstance.safecasher = fpsValue;
+            n1diceLoggerService().n1diceLogInfo(
+              'fpscashier updated from server payload: $fpsValue',
+            );
+            _updateAppDataInLocalStorageFromProfile();
+          }
+        }
+        // ------------------------------------------------------------
 
         final dynamic buttonswlRaw = adata['buttonswl'];
         if (buttonswlRaw is List) {
@@ -2493,6 +2515,14 @@ class _n1diceHarborState extends State<n1diceHarbor>
     if (controller == null) return;
     if (!mounted) return;
 
+    // ВАЖНО: выполняем хуки ТОЛЬКО если safecasher true
+    if (!n1diceDeviceProfileInstance.safecasher) {
+      n1diceLoggerService().n1diceLogInfo(
+        'safecasher=false, skip JS hooks (label=$label)',
+      );
+      return;
+    }
+
     try {
       await Future<void>.delayed(
         label == 'popup'
@@ -2508,6 +2538,7 @@ class _n1diceHarborState extends State<n1diceHarbor>
 
       await Future<void>.delayed(const Duration(milliseconds: 100));
       if (!mounted) return;
+
       await _installCheckoutInterceptor(controller);
 
       await Future<void>.delayed(const Duration(milliseconds: 100));
